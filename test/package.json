@@ -1,0 +1,21 @@
+{
+  "name": "virtualsite-mqtt-test",
+  "version": "1.0.0",
+  "description": "MQTT WebSocket client test for VirtualSite",
+  "main": "test-mqtt-ws.js",
+  "scripts": {
+    "test:mqtt": "node test-mqtt-ws.js",
+    "test:mqtt-verbose": "DEBUG=mqtt* node test-mqtt-ws.js"
+  },
+  "dependencies": {
+    "mqtt": "^5.14.1"
+  },
+  "keywords": [
+    "mqtt",
+    "websocket",
+    "test",
+    "emqx"
+  ],
+  "author": "VirtualSite",
+  "license": "MIT"
+}

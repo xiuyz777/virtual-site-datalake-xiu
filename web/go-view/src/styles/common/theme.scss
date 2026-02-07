@@ -1,0 +1,10 @@
+@use './mixins/config.scss' as config;
+@use './_dark.scss' as dark;
+@use './_light.scss' as light;
+
+$themes: (
+  // 亮白
+  #{config.$theme-light}: light.$light,
+  // 暗黑
+  #{config.$theme-dark}: dark.$dark
+);
