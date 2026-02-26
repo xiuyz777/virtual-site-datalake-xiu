@@ -333,14 +333,21 @@ _validate_binding_conflicts(binding, current_bindings)
 - 如果存在冲突，抛出错误：`目标属性 '{path}' 已被 {binding_name} 使用，不能重复绑定`
 
 **步骤 7：保存绑定到 Neo4j**
-
 ```python
 # 更新实例的绑定列表
 current_bindings = instance.iot_binds or []
 current_bindings.append(binding.model_dump())
 instance.iot_binds = current_bindings
 instance.save()
-```
+点击「创建绑定」→ handleSave 手动收集所有步骤的字段 → 做前端必填校验 → 用 validateBindings 修正/过滤 bindings → 组装成 fixedBinding → 调 createInstanceBinding(sceneId, instanceId, fixedBinding) 接口 → 后端验证 _validate_binding_config + _validate_binding_conflicts 后，把这条绑定 JSON 追加到该实例的 iot_binds（Neo4j）里 → 前端 onSave 刷新列表并关闭弹窗。
+最终这条绑定数据是存在 Neo4j 里的实例节点上。
+存储位置：Instance 模型的 iot_binds 字段（app/models/scene.py 里是 iot_binds = JSONProperty(default=list)）。
+写入流程（以创建为例）：
+接口 POST /scenes/{scene_id}/instances/{instance_id}/iot-bindings 找到对应的 Instance（按 uid == instance_id）。
+通过 _validate_binding_config 和 _validate_binding_conflicts 校验。
+然后：
+    current_bindings = instance.iot_binds or []    current_bindings.append(binding.model_dump())    instance.iot_binds = current_bindings    instance.save()
+也就是：在该实例节点的 iot_binds JSON 数组里追加一条绑定配置，并 save() 回 Neo4j。
 
 **存储位置**：
 - **数据库**：Neo4j

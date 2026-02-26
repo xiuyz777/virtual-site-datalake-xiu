@@ -18,6 +18,10 @@
 数据源路径**不是后端接口直接返回的字段**，而是：
 
 1. 用户先在绑定配置里**选好协议和数据源**（即选了一个 MQTT/HTTP/WebSocket 连接，对应 `sourceId`）。
+    sourceId 和 connectionId 在这套代码里指的是同一种东西，只是在不同地方用了不同名字。
+    当前选中的那条数据源连接的 ID。
+    创建 MQTT/HTTP/WebSocket 连接时，后端在 MongoDB 里插入一条文档（如 mqtt_sources、http_sources），返回的文档 _id 就是这个 ID（前端可能用字符串形式）。
+    作用：用来唯一标识「用哪条 MQTT/HTTP/WebSocket 配置」去连接、订阅、拉数据。
 2. 用户点击**「预览数据」**，前端根据当前协议和 `connectionId`（= sourceId）去**拉取/连接一次真实数据**。
 3. 前端把拿到的数据结构**展成树**，用户**在树上点选某个节点**，得到该节点对应的路径字符串。
 4. 该路径会**自动填到表单的「数据源路径」**（即 `bindings[].source`），保存绑定时就一起提交。
@@ -29,7 +33,7 @@
 ## 三、「预览数据」点击后的整体流程
 
 ### 1. 入口（IoTBindingConfigModal）
-
+     点击预览数据，会弹窗。并check是否已经选了 协议 跟 数据源
 **文件**：`web/src/components/IoTBindingConfigModal.tsx`
 
 - 在「绑定映射配置」里，「数据源路径」输入框右侧有一个**云图标按钮**，`title="预览数据"`。
@@ -60,7 +64,7 @@
   - `onPathSelect`：用户确认路径后，用选中的路径回填表单。
 
 ### 2. 预览弹窗打开时拉数据（DataPreviewModal）
-
+      弹出打开的时候，会根据协议跟connectionId去拉取数据
 **文件**：`web/src/components/DataPathHelper.tsx`（DataPreviewModal 组件）
 
 弹窗 `visible` 为 true 时，会执行：
@@ -103,6 +107,93 @@ useEffect(() => {
   - `_config`：配置信息（name、topics、hostname、port 等）。
   - 其余 key = **主题名**，value = 该主题下最近一条消息的（解析后）JSON。
 - 对这份 `data` 做 **buildDataTree** 时，第一层 key 就包含「主题名」，后面是 JSON 层级，所以每个节点的 **path** 形如 **`主题.data.value`**，即 **MQTT 的数据源路径 = 主题 + "." + JSON 路径**。
+
+        else if (protocol === IoTProtocolType.MQTT) {
+                console.log('📡 开始获取MQTT数据预览...');
+                
+                // 获取配置但不设置状态，避免触发useEffect重新执行
+                let configForPreview = mqttConfig;
+                if (!configForPreview) {
+                  const configResponse = await mqttAPI.getMQTTById(connectionId);
+                  configForPreview = configResponse.data;
+                  console.log('⚙️ MQTT配置已获取:', configForPreview);
+                  
+                  // 延迟设置配置，避免在数据收集期间触发useEffect
+                  setTimeout(() => {
+                    setMqttConfig(configForPreview);
+                  }, 100);
+                }
+                
+                console.log('⏳ 等待8秒收集MQTT数据...');
+                console.log('📊 当前已收集消息数量:', Object.keys(collectedMessages).length);
+                
+                // 保存当前的collectedMessages引用，避免闭包问题
+                let finalMessages = collectedMessages;
+                
+                // 等待一段时间让MQTT连接建立并收集消息
+                await new Promise<void>((resolve) => {
+                  // 每秒检查一次收集到的消息
+                  let checkCount = 0;
+                  const checkInterval = setInterval(() => {
+                    checkCount++;
+                    console.log(`⏱️ 第${checkCount}秒检查: 状态中${Object.keys(collectedMessages).length}条消息，ref中${Object.keys(collectedMessagesRef.current).length}条消息`);
+                    
+                    if (checkCount >= 8) {
+                      clearInterval(checkInterval);
+                      finalMessages = collectedMessagesRef.current;
+                      console.log('⏰ 等待时间结束，检查收集到的消息...');
+                      console.log('💾 最终收集到的消息:', finalMessages);
+                      resolve();
+                    }
+                  }, 1000);
+                });
+                
+                // 使用ref中的数据而不是状态，避免闭包问题
+                const currentMessages = collectedMessagesRef.current;
+                const finalConfig = configForPreview;
+                
+                // 处理收集到的消息
+                if (Object.keys(currentMessages).length > 0) {
+                  console.log('✅ 有收集到数据，生成数据结构...');
+                  data = {
+                    _config: {
+                      name: finalConfig.name,
+                      topics: finalConfig.topics,
+                      hostname: finalConfig.hostname,
+                      port: finalConfig.port,
+                      message: "已收集到实时数据"
+                    },
+                    ...currentMessages
+                  };
+                } else {
+                  console.log('❌ 没有收集到数据，显示配置信息...');
+                  const connection = mqttConnectionRef.current;
+                  console.log('🔍 连接状态检查:', {
+                    isConnected: connection?.isConnected,
+                    isConnecting: connection?.isConnecting,
+                    subscribedTopics: connection?.subscribedTopics,
+                    totalMessages: connection?.messages.length,
+                    error: connection?.error
+                  });
+                  data = {
+                    _config: {
+                      name: finalConfig.name,
+                      topics: finalConfig.topics,
+                      hostname: finalConfig.hostname,
+                      port: finalConfig.port,
+                      message: "暂无实时数据，请确保MQTT broker正在运行且有数据发布到订阅主题",
+                      debug_info: {
+                        isConnected: connection?.isConnected,
+                        subscribedTopics: connection?.subscribedTopics,
+                        messageCount: connection?.messages.length,
+                        error: connection?.error
+                      }
+                    }
+                  };
+                }
+        用 \config + ...currentMessages 拼出预览用的 data；currentMessages 的 key 是主题、value 是消息体。
+        数据结构：一个普通对象，顶层 key 为 _config 和各个主题名，主题名的 value 是该主题的 JSON 消息。
+        树：由 buildDataTree(data) 在后面根据这个 data 递归生成，不是在这几行里生成的。
 
 ### 3. WebSocket
 
