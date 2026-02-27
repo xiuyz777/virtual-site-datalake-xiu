@@ -21,6 +21,7 @@ import { SelectedModelPropertiesPanel } from '../../components/SelectedModelProp
 import { LayerDrawer, LayerInfo } from '../../components/LayerDrawer';
 import { MenuOutlined, EyeOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { getSceneDetail, updateInstanceProperties, getInstanceProperties } from '../../services/sceneApi'; // up by xiu
+import { buildInstanceUpdatePayloadFromPending } from '../../utils/iotInstanceSync';
 import { wmtsAPI } from '../../services/wmtsApi';
 
 // 新组件
@@ -538,118 +539,61 @@ const SceneEditorStandalone: React.FC = () => {
   // 性能优化：lastUpdateTime 用于节流渲染更新
   const lastUpdateTime = useRef<Map<string, number>>(new Map());
   
-  // 持久化节流：存储每个实例的最后写库时间和待写值 // up by xiu
+  // 持久化节流：存储每个实例的待写 targetPath -> value（支持同实例多属性） // up by xiu
   const lastPersistTime = useRef<Map<string, number>>(new Map()); // up by xiu
-  const pendingPersistValues = useRef<Map<string, { property: string; value: any }>>(new Map()); // up by xiu
+  const pendingPersistValues = useRef<Map<string, Record<string, any>>>(new Map()); // up by xiu
   const persistTimers = useRef<Map<string, NodeJS.Timeout>>(new Map()); // up by xiu
 
-  // 持久化实例属性更新到数据库（带节流，2秒内只写最后一次） // up by xiu
+  // 持久化实例属性更新到数据库（带节流，2秒内合并同实例多属性后写回） // up by xiu
   const persistInstanceUpdate = useCallback(async (instanceId: string, property: string, value: any) => { // up by xiu
     // 跳过场景级绑定（scene） // up by xiu
     if (instanceId === 'scene') { // up by xiu
       return; // up by xiu
     } // up by xiu
-    
-    // 存储待写的值（用于节流） // up by xiu
-    pendingPersistValues.current.set(instanceId, { property, value }); // up by xiu
-    
+
+    // 按实例累积待写：同一实例的多条 target 都会保留，定时合并后一次写回
+    const pending = pendingPersistValues.current.get(instanceId) || {};
+    pending[property] = value;
+    pendingPersistValues.current.set(instanceId, pending);
+
     // 清除之前的定时器（如果存在） // up by xiu
     const existingTimer = persistTimers.current.get(instanceId); // up by xiu
     if (existingTimer) { // up by xiu
       clearTimeout(existingTimer); // up by xiu
     } // up by xiu
-    
+
     // 设置新的定时器：2秒后执行写库（节流） // up by xiu
     const timer = setTimeout(async () => { // up by xiu
       try { // up by xiu
-        const pending = pendingPersistValues.current.get(instanceId); // up by xiu
-        if (!pending) return; // up by xiu
-        
-        // 🔧 修复：使用 pending 中的最新值，而不是闭包中的旧值 // up by xiu
-        const latestProperty = pending.property; // up by xiu
-        const latestValue = pending.value; // up by xiu
-        
-        // 获取当前实例属性 // up by xiu
+        const pendingRecord = pendingPersistValues.current.get(instanceId); // up by xiu
+        if (!pendingRecord || Object.keys(pendingRecord).length === 0) return; // up by xiu
+
+        // 获取当前实例属性（用于合并，避免覆盖未更新的字段）
         const currentPropsResponse = await getInstanceProperties(instanceId); // up by xiu
-        const currentProps = currentPropsResponse.data || {}; // up by xiu
-        const currentTransform = currentProps.transform || {}; // up by xiu
-        const currentProperties = currentProps.properties || {}; // up by xiu
-        
-        // 根据 property 判断要更新的字段 // up by xiu
-        let updateData: Record<string, any> = {}; // up by xiu
-        
-        if (latestProperty === 'scale' || latestProperty === 'rotation' || latestProperty === 'location' || 
-            latestProperty === 'position' || latestProperty === 'instance.transform.location' || 
-            latestProperty === 'instance.instance.transform.location' ||
-            latestProperty === 'instance.transform.scale' || latestProperty === 'instance.instance.transform.scale' || // up by xiu
-            latestProperty === 'instance.transform.rotation' || latestProperty === 'instance.instance.transform.rotation') { // up by xiu
-          // transform 相关属性：合并更新 transform // up by xiu
-          const newTransform = { ...currentTransform }; // up by xiu
-          
-          if (latestProperty === 'scale' || latestProperty === 'instance.transform.scale' || 
-              latestProperty === 'instance.instance.transform.scale') { // up by xiu
-            newTransform.scale = latestValue; // up by xiu
-          } else if (latestProperty === 'rotation' || latestProperty === 'instance.transform.rotation' || 
-                     latestProperty === 'instance.instance.transform.rotation') { // up by xiu
-            newTransform.rotation = latestValue; // up by xiu
-          } else if (latestProperty === 'location' || latestProperty === 'position' || // up by xiu
-                     latestProperty === 'instance.transform.location' || // up by xiu
-                     latestProperty === 'instance.instance.transform.location') { // up by xiu
-            newTransform.location = latestValue; // up by xiu
-          } // up by xiu
-          
-          updateData.transform = newTransform; // up by xiu
-        } else if (latestProperty === 'visibility' || latestProperty === 'visible') { // up by xiu
-          // visibility 属性：更新 properties // up by xiu
-          const newProperties = { ...currentProperties, visibility: Boolean(latestValue) }; // up by xiu
-          updateData.properties = newProperties; // up by xiu
-        } else if (latestProperty.startsWith('material.')) { // up by xiu
-          // material 属性：更新 properties.material // up by xiu
-          const materialKey = latestProperty.replace('material.', ''); // up by xiu
-          const newProperties = { // up by xiu
-            ...currentProperties, // up by xiu
-            material: { // up by xiu
-              ...(currentProperties.material || {}), // up by xiu
-              [materialKey]: latestValue // up by xiu
-            } // up by xiu
-          }; // up by xiu
-          updateData.properties = newProperties; // up by xiu
-        } else { // up by xiu
-          // 其他属性：更新到 properties // up by xiu
-          const newProperties = { ...currentProperties, [latestProperty]: latestValue }; // up by xiu
-          updateData.properties = newProperties; // up by xiu
+        const data = currentPropsResponse.data?.data; // up by xiu
+        const currentInstance = data?.instance ?? {}; // up by xiu
+
+        // 将待写的 targetPath->value 合并为 PUT 的 payload
+        const updateData = buildInstanceUpdatePayloadFromPending(pendingRecord, currentInstance); // up by xiu
+        if (Object.keys(updateData).length === 0) { // up by xiu
+          pendingPersistValues.current.delete(instanceId); // up by xiu
+          persistTimers.current.delete(instanceId); // up by xiu
+          return; // up by xiu
         } // up by xiu
-        
-        // 执行更新 // up by xiu
+
         await updateInstanceProperties(instanceId, updateData); // up by xiu
-        console.log(`✅ 持久化成功: ${instanceId}.${latestProperty} =`, latestValue); // up by xiu
-        console.log(`📊 更新数据:`, updateData); // up by xiu
-        
-        // 验证：查询更新后的属性确认已写入数据库 // up by xiu
-        try { // up by xiu
-          const verifyResponse = await getInstanceProperties(instanceId); // up by xiu
-          const verifiedProps = verifyResponse.data || {}; // up by xiu
-          console.log(`🔍 数据库验证 - ${instanceId}:`, { // up by xiu
-            transform: verifiedProps.transform, // up by xiu
-            properties: verifiedProps.properties // up by xiu
-          }); // up by xiu
-        } catch (verifyError) { // up by xiu
-          console.warn(`⚠️ 验证查询失败:`, verifyError); // up by xiu
-        } // up by xiu
-        
+        console.log(`✅ 持久化成功: ${instanceId}`, updateData); // up by xiu
+
         // 清理待写值和定时器 // up by xiu
         pendingPersistValues.current.delete(instanceId); // up by xiu
         persistTimers.current.delete(instanceId); // up by xiu
         lastPersistTime.current.set(instanceId, Date.now()); // up by xiu
       } catch (error) { // up by xiu
-        const pending = pendingPersistValues.current.get(instanceId); // up by xiu
-        const errorProperty = pending?.property || 'unknown'; // up by xiu
-        console.error(`❌ 持久化失败: ${instanceId}.${errorProperty}`, error); // up by xiu
-        // 清理定时器，但保留待写值以便重试 // up by xiu
+        console.error(`❌ 持久化失败: ${instanceId}`, error); // up by xiu
         persistTimers.current.delete(instanceId); // up by xiu
       } // up by xiu
     }, 2000); // 2秒节流 // up by xiu
-    
+
     persistTimers.current.set(instanceId, timer); // up by xiu
   }, []); // up by xiu
 
