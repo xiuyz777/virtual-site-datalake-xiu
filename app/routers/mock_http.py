@@ -14,7 +14,7 @@ async def read_mock_sensor():
     return {
         "deviceId": "sensor-001",
         "data": {
-            "temperature": 26.3,
+            "location  ": [-11, -5, -30],
             "humidity": 58.7,
         },
     }

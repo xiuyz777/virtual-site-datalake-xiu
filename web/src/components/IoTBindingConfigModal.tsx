@@ -656,7 +656,16 @@ const IoTBindingConfigModal: React.FC<IoTBindingConfigModalProps> = ({
         valueMapping: binding.valueMapping || undefined,
         interpolation: binding.interpolation || undefined,
         updateInterval: binding.updateInterval || undefined,
-        transform: binding.transform || undefined
+        transform: binding.transform || undefined,
+        // 如果是HTTP协议，补充最简httpConfig，满足后端验证要求
+        ...(binding.protocol === IoTProtocolType.HTTP
+          ? {
+              httpConfig: {
+                method: 'GET',
+                timeout: 30000,
+              },
+            }
+          : {}),
       };
       
       // 调试：打印修复后的绑定对象
@@ -731,7 +740,15 @@ const IoTBindingConfigModal: React.FC<IoTBindingConfigModalProps> = ({
         valueMapping: values.valueMapping || undefined,
         interpolation: values.interpolation || undefined,
         updateInterval: values.updateInterval || undefined,
-        transform: values.transform || undefined
+        transform: values.transform || undefined,
+        ...(values.protocol === IoTProtocolType.HTTP
+          ? {
+              httpConfig: {
+                method: 'GET',
+                timeout: 30000,
+              },
+            }
+          : {}),
       };
 
       const sampleData = {
@@ -824,7 +841,15 @@ const IoTBindingConfigModal: React.FC<IoTBindingConfigModalProps> = ({
         valueMapping: values.valueMapping || undefined,
         interpolation: values.interpolation || undefined,
         updateInterval: values.updateInterval || undefined,
-        transform: values.transform || undefined
+        transform: values.transform || undefined,
+        ...(values.protocol === IoTProtocolType.HTTP
+          ? {
+              httpConfig: {
+                method: 'GET',
+                timeout: 30000,
+              },
+            }
+          : {}),
       };
 
       console.log('💾 保存的绑定数据:', fixedBinding);
