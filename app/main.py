@@ -20,6 +20,7 @@ from app.routers import mqtt  # 新增MQTT连接配置路由
 from app.routers import http  # 新增HTTP连接配置路由
 # from app.routers import charts  # 新增图表管理路由
 from app.routers import goview  # 新增GoView路由
+from app.routers import mock_http  # 模拟HTTP数据源路由
 from app.models.user import UserRole
 from app.auth.utils import get_password_hash
 from app.core.minio_client import check_and_create_bucket
@@ -100,6 +101,7 @@ app.include_router(iot_connections.router, prefix="/iot", tags=["IoT连接统一
 app.include_router(iot_bindings.router, prefix="", tags=["IoT绑定"])  # 新的IoT绑定系统
 # app.include_router(charts.router, prefix="/charts", tags=["图表管理"])  # 新增图表管理路由
 app.include_router(goview.router, prefix="/goview", tags=["GoView"])  # 新增GoView路由
+app.include_router(mock_http.router, prefix="", tags=["MockHTTP"])  # 模拟HTTP数据源路由
 
 # MongoDB连接
 client = AsyncIOMotorClient(MONGO_URL)
