@@ -32,11 +32,13 @@ interface ExtendedDataNode extends DataNode {
   };
 }
 
+// up by xiu: 扩展数据预览能力（MQTT 收集 / HTTP 直连 / WebSocket 真实预览）
 import { 
   IoTProtocolType
 } from '../services/iotBindingApi';
 import { mqttAPI } from '../services/mqttApi';
 import { httpAPI } from '../services/httpApi';
+import { websocketAPI } from '../services/websocketApi'; // up by xiu
 import { getInstanceProperties } from '../services/sceneApi';
 import { useMQTTConnection } from '../hooks/useMQTTConnection';
 import { BoneNode, AnimationManagerState } from '../types/animation';
@@ -808,25 +810,37 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
           };
         }
       } else if (protocol === IoTProtocolType.WEBSOCKET) {
-        // WebSocket连接预览
+        // up by xiu: WebSocket 真实连接预览：拉取配置后连接，收到第一条消息即作为预览数据
+        const configRes = await websocketAPI.getWebSocketById(connectionId);
+        const wsConfig = configRes.data as { url: string; protocols?: string[] };
+        const url = wsConfig?.url;
+        if (!url) {
+          throw new Error('WebSocket 数据源未配置 URL');
+        }
         data = await new Promise((resolve, reject) => {
           const timeout = setTimeout(() => {
-            reject(new Error('获取数据超时'));
+            ws.close();
+            reject(new Error('获取数据超时（10秒内未收到消息，请确保服务端会主动推送或先运行测试发送脚本）'));
           }, 10000);
-
-          // 这里需要实现WebSocket连接
-          // 暂时使用模拟数据
-          setTimeout(() => {
+          const ws = new WebSocket(url, wsConfig.protocols);
+          ws.onmessage = (event) => {
             clearTimeout(timeout);
-            resolve({
-              realtime: {
-                speed: 120.5,
-                location: { lat: 39.9042, lng: 116.4074 },
-                direction: 45
-              },
-              status: "connected"
-            });
-          }, 1500);
+            try {
+              const raw = event.data;
+              const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+              ws.close();
+              resolve(parsed);
+            } catch {
+              ws.close();
+              resolve({ _raw: String(event.data) });
+            }
+          };
+          ws.onerror = () => {
+            clearTimeout(timeout);
+            ws.close();
+            reject(new Error('WebSocket 连接失败，请检查 URL 及测试服务是否已启动'));
+          };
+          ws.onclose = () => { clearTimeout(timeout); };
         });
       }
 

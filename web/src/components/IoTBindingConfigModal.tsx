@@ -31,6 +31,7 @@ import {
   CloudOutlined
 } from '@ant-design/icons';
 
+// up by xiu: 增强 IoT 绑定配置（HTTP 默认 httpConfig / 前端验证等）
 import {
   iotBindingAPI,
   IoTBinding,
@@ -657,7 +658,7 @@ const IoTBindingConfigModal: React.FC<IoTBindingConfigModalProps> = ({
         interpolation: binding.interpolation || undefined,
         updateInterval: binding.updateInterval || undefined,
         transform: binding.transform || undefined,
-        // 如果是HTTP协议，补充最简httpConfig，满足后端验证要求
+        // 如果是HTTP协议，补充最简httpConfig，满足后端验证要求 // up by xiu
         ...(binding.protocol === IoTProtocolType.HTTP
           ? {
               httpConfig: {

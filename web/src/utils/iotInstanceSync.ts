@@ -1,3 +1,4 @@
+// up by xiu: IoT 实例属性实时值写回 Neo4j 的辅助工具
 /**
  * IoT 绑定实时值同步到 Neo4j 实例属性的工具
  * 将 target 路径（如 instance.instance.transform.location）合并为 PUT /instances 的 payload

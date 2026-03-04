@@ -8,7 +8,8 @@
     "test:mqtt-verbose": "DEBUG=mqtt* node test-mqtt-ws.js"
   },
   "dependencies": {
-    "mqtt": "^5.14.1"
+    "mqtt": "^5.14.1",
+    "ws": "^8.19.0"
   },
   "keywords": [
     "mqtt",

@@ -11,10 +11,11 @@ async def read_mock_sensor():
     访问地址（后端默认端口 8000 时）：
         GET http://localhost:8000/mock/sensor
     """
+    # up by xiu: 内置 HTTP 模拟数据源，统一给 MQTT / WebSocket 测试对齐的数据结构
     return {
         "deviceId": "sensor-001",
         "data": {
-            "location  ": [-11, -5, -30],
+            "location": [-11, -5, -30],
             "humidity": 58.7,
         },
     }
