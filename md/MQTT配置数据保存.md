@@ -133,3 +133,14 @@ async def create_mqtt_config(
 - **创建入口**：前端 POST `/mqtt/`，后端 `create_mqtt_config`。
 - **依赖**：`get_database()` 提供 `db`，`get_current_active_user` 保证已登录。
 - **写入**：`db.mqtt_sources.insert_one(mqtt_dict)`，返回带 `_id` 的文档供前端使用。
+=========================================================
+用户在「数据管理」里进入 MQTT 页面，填好连接信息：名称、服务器地址、端口、WebSocket 路径、订阅的 topic、用户名密码等，点「新建」或「保存」。
+前端把这些表单项整理成一个对象，把 tags、topics 之类统一成数组，然后调用接口：新建就发 POST /mqtt/，编辑就发带 id 的更新请求，请求体里就是这一份 MQTT 配置。
+
+请求到了后端，先校验用户是否登录，再按 MQTTCreate 模型校验请求体（字段类型、必填项等），不通过会直接报错。
+通过后，把请求体转成字典，只保留前端实际传了的字段，再补上创建时间、更新时间；如果没传 client_id，就自动生成一个（例如 iot_client_xxx）。
+最后用 db.mqtt_sources.insert_one(...) 把这条配置写进 MongoDB 的 mqtt_sources 集合里。
+插入成功后，数据库会生成一个 _id，后端根据这个 _id 把刚插入的那条文档查出来，按约定格式返回给前端。
+前端拿到的这条配置（尤其是它的 _id）之后在配置 IoT 绑定时会当作 MQTT 数据源 ID（sourceId） 来用。
+
+所以整件事就是：用户在页面上填 MQTT 连接信息并保存 → 前端发 POST /mqtt/ → 后端校验、补全、写入 MongoDB 的 mqtt_sources 集合 → 返回带 _id 的配置，供后续做 MQTT 数据源和绑定使用。
