@@ -73,7 +73,7 @@ class Scene(StructuredNode):
 
     # 根节点（单向；场景只有一个 ROOT）
     root         = RelationshipTo('Instance', 'ROOT', cardinality=One)
-
+    # Scene 通过一条叫 ROOT 的边，指向一个 Instance 节点。且只能有一个根实例
     # 场景层级关系
     parent_scene = RelationshipFrom('Scene', 'SCENE_PARENT_OF', model=SceneParentRel)
     child_scenes = RelationshipTo('Scene', 'SCENE_PARENT_OF', model=SceneParentRel)
