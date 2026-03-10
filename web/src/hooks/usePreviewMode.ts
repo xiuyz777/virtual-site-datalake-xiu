@@ -593,25 +593,25 @@ export const usePreviewMode = (options: PreviewModeOptions) => {
       if (connection.client) {
         switch (connection.protocol) {
           case IoTProtocolType.MQTT:
-            // 🔧 强化MQTT客户端清理 // up by xiu
+            // up by xiu: 强化 MQTT 客户端清理（取消订阅 + 清理监听 + 强制关闭连接）
             try {
-              // 🔧 修复：先取消所有订阅，避免消息继续到达 // up by xiu
-              if (connection.client && connection.client.unsubscribe) { // up by xiu
-                try { // up by xiu
-                  // 取消所有订阅（传入空数组表示取消所有） // up by xiu
-                  connection.client.unsubscribe([]); // up by xiu
-                  debugLog('POOL_DISCONNECT', `已取消MQTT订阅`, { sourceId }); // up by xiu
-                } catch (unsubError: any) { // up by xiu
-                  debugLog('POOL_DISCONNECT', `取消订阅失败`, { sourceId, error: unsubError.message }); // up by xiu
-                } // up by xiu
-              } // up by xiu
+              // 先取消所有订阅，避免在断开后仍有消息到达
+              if (connection.client && connection.client.unsubscribe) {
+                try {
+                  // 取消所有订阅（传入空数组表示取消所有）
+                  connection.client.unsubscribe([]);
+                  debugLog('POOL_DISCONNECT', `已取消MQTT订阅`, { sourceId });
+                } catch (unsubError: any) {
+                  debugLog('POOL_DISCONNECT', `取消订阅失败`, { sourceId, error: unsubError.message });
+                }
+              }
               
               // 先移除所有事件监听器，避免在断开过程中触发事件
               if (connection.client.removeAllListeners) {
                 connection.client.removeAllListeners();
               }
               
-              // 强制结束连接（force=true立即关闭）
+              // 强制结束连接（force=true 立即关闭）
               if (connection.client.end) {
                 connection.client.end(true);
               }

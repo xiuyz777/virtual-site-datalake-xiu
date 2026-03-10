@@ -20,7 +20,8 @@ import { AssetTabs } from '../../components/AssetTabs.js';
 import { SelectedModelPropertiesPanel } from '../../components/SelectedModelPropertiesPanel';
 import { LayerDrawer, LayerInfo } from '../../components/LayerDrawer';
 import { MenuOutlined, EyeOutlined, ArrowLeftOutlined } from '@ant-design/icons';
-import { getSceneDetail, updateInstanceProperties, getInstanceProperties } from '../../services/sceneApi'; // up by xiu
+// up by xiu: 引入实例详情与属性更新接口（用于 IoT 持久化）
+import { getSceneDetail, updateInstanceProperties, getInstanceProperties } from '../../services/sceneApi';
 import { buildInstanceUpdatePayloadFromPending } from '../../utils/iotInstanceSync';
 import { wmtsAPI } from '../../services/wmtsApi';
 
@@ -77,17 +78,17 @@ const SceneEditorStandalone: React.FC = () => {
       .finally(() => setLoadingScene(false));
   }, [sceneId]);
 
-  // 组件卸载时清理持久化定时器 // up by xiu
-  useEffect(() => { // up by xiu
-    return () => { // up by xiu
-      // 清理所有待执行的定时器 // up by xiu
-      persistTimers.current.forEach((timer) => { // up by xiu
-        clearTimeout(timer); // up by xiu
-      }); // up by xiu
-      persistTimers.current.clear(); // up by xiu
-      pendingPersistValues.current.clear(); // up by xiu
-    }; // up by xiu
-  }, []); // up by xiu
+  // up by xiu: 组件卸载时清理实例属性持久化相关的定时器和缓存
+  useEffect(() => {
+    return () => {
+      // 清理所有待执行的定时器
+      persistTimers.current.forEach((timer) => {
+        clearTimeout(timer);
+      });
+      persistTimers.current.clear();
+      pendingPersistValues.current.clear();
+    };
+  }, []);
 
   // 组件加载时立即获取场景数据
   useEffect(() => {
@@ -228,92 +229,91 @@ const SceneEditorStandalone: React.FC = () => {
   // Selected Model State
   const [selectedModelInfo, setSelectedModelInfo] = useState<SelectedModelInfo | null>(null);
   
-  // 性能优化：缓存实例ID到primitive的映射（提前定义，供后续使用） // up by xiu
-  const primitiveCache = useRef<Map<string, any>>(new Map()); // up by xiu
+  // up by xiu: 性能优化 —— 缓存实例 ID 到 primitive 的映射，便于快速查找
+  const primitiveCache = useRef<Map<string, any>>(new Map());
   
-  // 更新缓存 // up by xiu
-  const updatePrimitiveCache = useCallback(() => { // up by xiu
-    if (!viewerRef.current?.scene?.primitives) return; // up by xiu
-    primitiveCache.current.clear(); // up by xiu
-    const primitives = viewerRef.current.scene.primitives; // up by xiu
-    for (let i = 0; i < primitives.length; i++) { // up by xiu
-      const primitive = primitives.get(i); // up by xiu
-      if (primitive && (primitive.id || (primitive as any).instanceId)) { // up by xiu
-        const primitiveInstanceId = primitive.id || (primitive as any).instanceId; // up by xiu
-        primitiveCache.current.set(primitiveInstanceId, primitive); // up by xiu
-      } // up by xiu
-    } // up by xiu
-  }, []); // up by xiu
+  // up by xiu: 更新缓存内容（从 Cesium viewer 的 primitives 中重建映射表）
+  const updatePrimitiveCache = useCallback(() => {
+    if (!viewerRef.current?.scene?.primitives) return;
+    primitiveCache.current.clear();
+    const primitives = viewerRef.current.scene.primitives;
+    for (let i = 0; i < primitives.length; i++) {
+      const primitive = primitives.get(i);
+      if (primitive && (primitive.id || (primitive as any).instanceId)) {
+        const primitiveInstanceId = primitive.id || (primitive as any).instanceId;
+        primitiveCache.current.set(primitiveInstanceId, primitive);
+      }
+    }
+  }, []);
   
-  // 🔧 修复：当从场景实例树选择模型时，同步更新 selectedModelInfo // up by xiu
-  useEffect(() => { // up by xiu
-    if (selectedInstanceId) { // up by xiu
-      // 查找 primitive 的函数 // up by xiu
-      const findPrimitive = (): any => { // up by xiu
-        // 方法1：从缓存中查找 // up by xiu
-        let primitive = primitiveCache.current.get(selectedInstanceId); // up by xiu
-        if (primitive) return primitive; // up by xiu
-        // up by xiu
-        // 方法2：更新缓存后查找 // up by xiu
-        updatePrimitiveCache(); // up by xiu
-        primitive = primitiveCache.current.get(selectedInstanceId); // up by xiu
-        if (primitive) return primitive; // up by xiu
-        // up by xiu
-        // 方法3：直接从 viewer 中实时查找（不依赖缓存） // up by xiu
-        if (viewerRef.current?.scene?.primitives) { // up by xiu
-          const primitives = viewerRef.current.scene.primitives; // up by xiu
-          for (let i = 0; i < primitives.length; i++) { // up by xiu
-            const p = primitives.get(i); // up by xiu
-            if (p && (p.id === selectedInstanceId || (p as any).instanceId === selectedInstanceId)) { // up by xiu
-              // 找到后更新缓存 // up by xiu
-              primitiveCache.current.set(selectedInstanceId, p); // up by xiu
-              return p; // up by xiu
-            } // up by xiu
-          } // up by xiu
-        } // up by xiu
-        return null; // up by xiu
-      }; // up by xiu
-      // up by xiu
-      // 立即尝试查找 // up by xiu
-      let primitive = findPrimitive(); // up by xiu
-      if (primitive) { // up by xiu
-        // 创建 SelectedModelInfo 对象 // up by xiu
-        setSelectedModelInfo({ // up by xiu
-          id: selectedInstanceId, // up by xiu
-          name: (primitive as any).name || (primitive as any).asset_name || 'Unnamed Model', // up by xiu
-          primitive: primitive, // up by xiu
-        }); // up by xiu
-      } else { // up by xiu
-        // 即使找不到 primitive，也立即创建一个基本的 SelectedModelInfo，以便属性面板能立即开始加载属性 // up by xiu
-        // 这样用户点击实例后就能立即看到属性，而不需要等待找到 primitive // up by xiu
-        setSelectedModelInfo({ // up by xiu
-          id: selectedInstanceId, // up by xiu
-          name: selectedInstanceId, // up by xiu
-          primitive: null as any, // primitive 可能暂时找不到，但不影响属性显示 // up by xiu
-        }); // up by xiu
-        // up by xiu
-        // 延迟重试查找 primitive（可能场景还在加载中），找到后更新 name // up by xiu
-        const retryTimer = setTimeout(() => { // up by xiu
-          primitive = findPrimitive(); // up by xiu
-          if (primitive) { // up by xiu
-            // 更新 name，但保持 id 不变 // up by xiu
-            setSelectedModelInfo(prev => prev ? { // up by xiu
-              ...prev, // up by xiu
-              name: (primitive as any).name || (primitive as any).asset_name || prev.name, // up by xiu
-              primitive: primitive, // up by xiu
-            } : null); // up by xiu
-          } else { // up by xiu
-            console.warn(`⚠️ 无法找到实例 ${selectedInstanceId} 对应的 primitive，但属性仍可正常显示`); // up by xiu
-          } // up by xiu
-        }, 100); // 延迟100ms重试 // up by xiu
-        // up by xiu
-        return () => clearTimeout(retryTimer); // up by xiu
-      } // up by xiu
-    } else { // up by xiu
-      // 如果 selectedInstanceId 为 null，清空 selectedModelInfo // up by xiu
-      setSelectedModelInfo(null); // up by xiu
-    } // up by xiu
-  }, [selectedInstanceId, updatePrimitiveCache]); // up by xiu
+  // up by xiu: 当从场景实例树选择模型时，同步更新 selectedModelInfo
+  useEffect(() => {
+    if (selectedInstanceId) {
+      // 查找 primitive 的函数，优先用缓存，其次刷新缓存，最后直接遍历 primitives
+      const findPrimitive = (): any => {
+        // 方法 1：从缓存中查找
+        let primitive = primitiveCache.current.get(selectedInstanceId);
+        if (primitive) return primitive;
+
+        // 方法 2：更新缓存后再查找
+        updatePrimitiveCache();
+        primitive = primitiveCache.current.get(selectedInstanceId);
+        if (primitive) return primitive;
+
+        // 方法 3：直接从 viewer 中实时查找（不依赖缓存）
+        if (viewerRef.current?.scene?.primitives) {
+          const primitives = viewerRef.current.scene.primitives;
+          for (let i = 0; i < primitives.length; i++) {
+            const p = primitives.get(i);
+            if (p && (p.id === selectedInstanceId || (p as any).instanceId === selectedInstanceId)) {
+              // 找到后更新缓存
+              primitiveCache.current.set(selectedInstanceId, p);
+              return p;
+            }
+          }
+        }
+        return null;
+      };
+
+      // 立即尝试查找 primitive
+      let primitive = findPrimitive();
+      if (primitive) {
+        // 创建 SelectedModelInfo 对象
+        setSelectedModelInfo({
+          id: selectedInstanceId,
+          name: (primitive as any).name || (primitive as any).asset_name || 'Unnamed Model',
+          primitive: primitive,
+        });
+      } else {
+        // 即使暂时找不到 primitive，也先创建一个基本的 SelectedModelInfo，
+        // 这样属性面板可以立即开始加载属性，不必等到模型完全找到
+        setSelectedModelInfo({
+          id: selectedInstanceId,
+          name: selectedInstanceId,
+          primitive: null as any, // primitive 可能暂时找不到，但不影响属性显示
+        });
+
+        // 延迟重试查找 primitive（场景可能还在加载中），找到后再更新 name 和 primitive
+        const retryTimer = setTimeout(() => {
+          primitive = findPrimitive();
+          if (primitive) {
+            // 更新 name 和 primitive，保持 id 不变
+            setSelectedModelInfo(prev => prev ? {
+              ...prev,
+              name: (primitive as any).name || (primitive as any).asset_name || prev.name,
+              primitive: primitive,
+            } : null);
+          } else {
+            console.warn(`⚠️ 无法找到实例 ${selectedInstanceId} 对应的 primitive，但属性仍可正常显示`);
+          }
+        }, 100); // 延迟 100ms 重试
+        return () => clearTimeout(retryTimer); 
+      }
+    } else {
+      // 如果 selectedInstanceId 为 null，清空 selectedModelInfo 
+      setSelectedModelInfo(null); 
+    } 
+  }, [selectedInstanceId, updatePrimitiveCache]); 
   
   // 实时变换状态，用于在gizmo操作过程中更新侧边栏
   const [realtimeTransform, setRealtimeTransform] = useState<{
@@ -539,17 +539,17 @@ const SceneEditorStandalone: React.FC = () => {
   // 性能优化：lastUpdateTime 用于节流渲染更新
   const lastUpdateTime = useRef<Map<string, number>>(new Map());
   
-  // 持久化节流：存储每个实例的待写 targetPath -> value（支持同实例多属性） // up by xiu
-  const lastPersistTime = useRef<Map<string, number>>(new Map()); // up by xiu
-  const pendingPersistValues = useRef<Map<string, Record<string, any>>>(new Map()); // up by xiu
-  const persistTimers = useRef<Map<string, NodeJS.Timeout>>(new Map()); // up by xiu
+  // 持久化节流：存储每个实例的待写 targetPath -> value（支持同实例多属性） 
+  const lastPersistTime = useRef<Map<string, number>>(new Map()); 
+  const pendingPersistValues = useRef<Map<string, Record<string, any>>>(new Map()); 
+  const persistTimers = useRef<Map<string, NodeJS.Timeout>>(new Map()); 
 
   // 持久化实例属性更新到数据库（带节流，2秒内合并同实例多属性后写回） // up by xiu
   const persistInstanceUpdate = useCallback(async (instanceId: string, property: string, value: any) => { // up by xiu
-    // 跳过场景级绑定（scene） // up by xiu
-    if (instanceId === 'scene') { // up by xiu
-      return; // up by xiu
-    } // up by xiu
+    // 跳过场景级绑定（scene） 
+    if (instanceId === 'scene') { 
+      return; 
+    } 
 
     // 按实例累积待写：同一实例的多条 target 都会保留，定时合并后一次写回
     const pending = pendingPersistValues.current.get(instanceId) || {};
@@ -557,45 +557,45 @@ const SceneEditorStandalone: React.FC = () => {
     pendingPersistValues.current.set(instanceId, pending);
 
     // 清除之前的定时器（如果存在） // up by xiu
-    const existingTimer = persistTimers.current.get(instanceId); // up by xiu
-    if (existingTimer) { // up by xiu
-      clearTimeout(existingTimer); // up by xiu
-    } // up by xiu
+    const existingTimer = persistTimers.current.get(instanceId); 
+    if (existingTimer) {
+      clearTimeout(existingTimer); 
+    } 
 
     // 设置新的定时器：2秒后执行写库（节流） // up by xiu
-    const timer = setTimeout(async () => { // up by xiu
-      try { // up by xiu
-        const pendingRecord = pendingPersistValues.current.get(instanceId); // up by xiu
-        if (!pendingRecord || Object.keys(pendingRecord).length === 0) return; // up by xiu
+    const timer = setTimeout(async () => { 
+      try { 
+        const pendingRecord = pendingPersistValues.current.get(instanceId); 
+        if (!pendingRecord || Object.keys(pendingRecord).length === 0) return; 
 
         // 获取当前实例属性（用于合并，避免覆盖未更新的字段）
-        const currentPropsResponse = await getInstanceProperties(instanceId); // up by xiu
-        const data = currentPropsResponse.data?.data; // up by xiu
-        const currentInstance = data?.instance ?? {}; // up by xiu
+        const currentPropsResponse = await getInstanceProperties(instanceId); 
+        const data = currentPropsResponse.data?.data; 
+        const currentInstance = data?.instance ?? {}; 
 
         // 将待写的 targetPath->value 合并为 PUT 的 payload
         const updateData = buildInstanceUpdatePayloadFromPending(pendingRecord, currentInstance); // up by xiu
-        if (Object.keys(updateData).length === 0) { // up by xiu
-          pendingPersistValues.current.delete(instanceId); // up by xiu
-          persistTimers.current.delete(instanceId); // up by xiu
-          return; // up by xiu
-        } // up by xiu
+        if (Object.keys(updateData).length === 0) { 
+          pendingPersistValues.current.delete(instanceId); 
+          persistTimers.current.delete(instanceId);
+          return; 
+        } 
 
-        await updateInstanceProperties(instanceId, updateData); // up by xiu
-        console.log(`✅ 持久化成功: ${instanceId}`, updateData); // up by xiu
+        await updateInstanceProperties(instanceId, updateData); 
+        console.log(`✅ 持久化成功: ${instanceId}`, updateData); 
 
         // 清理待写值和定时器 // up by xiu
-        pendingPersistValues.current.delete(instanceId); // up by xiu
-        persistTimers.current.delete(instanceId); // up by xiu
-        lastPersistTime.current.set(instanceId, Date.now()); // up by xiu
-      } catch (error) { // up by xiu
-        console.error(`❌ 持久化失败: ${instanceId}`, error); // up by xiu
-        persistTimers.current.delete(instanceId); // up by xiu
-      } // up by xiu
-    }, 2000); // 2秒节流 // up by xiu
+        pendingPersistValues.current.delete(instanceId); 
+        persistTimers.current.delete(instanceId); 
+        lastPersistTime.current.set(instanceId, Date.now()); 
+      } catch (error) { 
+        console.error(`❌ 持久化失败: ${instanceId}`, error); 
+        persistTimers.current.delete(instanceId); 
+      } 
+    }, 2000); // 2秒节流 
 
-    persistTimers.current.set(instanceId, timer); // up by xiu
-  }, []); // up by xiu
+    persistTimers.current.set(instanceId, timer); 
+  }, []); 
 
   // 抽取的属性更新函数 - 性能优化版本
   const applyPropertyUpdate = (primitive: any, property: string, value: any, targetInstanceId: string) => {

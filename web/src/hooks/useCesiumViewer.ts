@@ -190,13 +190,13 @@ export const useCesiumViewer = (
               (tileset as any).name = instance.name;
               (tileset as any).instanceId = instance.uid;
               
-              // 🔧 修复：从数据库读取 visibility 并设置显示状态 // up by xiu
-              if (instance.properties && typeof instance.properties.visibility !== 'undefined') { // up by xiu
-                tileset.show = Boolean(instance.properties.visibility); // up by xiu
-                console.log(`设置3DTiles "${instance.name}" 的可见性:`, tileset.show); // up by xiu
-              } else { // up by xiu
-                tileset.show = true; // 默认显示 // up by xiu
-              } // up by xiu
+              // up by xiu: 从数据库读取 visibility 并设置 3DTiles 显示状态
+              if (instance.properties && typeof instance.properties.visibility !== 'undefined') {
+                tileset.show = Boolean(instance.properties.visibility);
+                console.log(`设置3DTiles "${instance.name}" 的可见性:`, tileset.show);
+              } else {
+                tileset.show = true; // 默认显示
+              }
               
               viewerRef.current.scene.primitives.add(tileset);
               instanceModelsRef.current.set(instance.uid, tileset);
@@ -294,18 +294,18 @@ export const useCesiumViewer = (
             sceneOrigin: origin
           });
 
-          // 获取实例的位置信息（x, y, z是相对原点的局部坐标）
-          // 🔧 修复：添加默认值，避免解构失败 // up by xiu
-          const transform = instance.transform || {}; // up by xiu
-          let location = transform.location || [0, 0, 0]; // up by xiu
-          const rotation = transform.rotation || [0, 0, 0]; // up by xiu
-          const scale = transform.scale || [1, 1, 1]; // up by xiu
+          // 获取实例的位置信息（x, y, z 是相对原点的局部坐标）
+          // up by xiu: 添加默认值并校验，避免 transform / location 解构失败
+          const transform = instance.transform || {};
+          let location = transform.location || [0, 0, 0];
+          const rotation = transform.rotation || [0, 0, 0];
+          const scale = transform.scale || [1, 1, 1];
           
-          // 🔧 验证 location 是否为数组 // up by xiu
-          if (!Array.isArray(location) || location.length < 3) { // up by xiu
-            console.warn(`⚠️ 实例 "${instance.name}" 的 location 格式不正确，使用默认值 [0, 0, 0]`, location); // up by xiu
-            location = [0, 0, 0]; // up by xiu
-          } // up by xiu
+          // 验证 location 是否为有效数组
+          if (!Array.isArray(location) || location.length < 3) {
+            console.warn(`⚠️ 实例 "${instance.name}" 的 location 格式不正确，使用默认值 [0, 0, 0]`, location);
+            location = [0, 0, 0];
+          }
           
           // 创建场景原点的笛卡尔坐标
           const originCartesian = Cesium.Cartesian3.fromDegrees(
@@ -367,38 +367,38 @@ export const useCesiumViewer = (
           
           // 应用缩放（如果有）
           if (scale && scale.length === 3) {
-            // 🔧 修复：验证 scale 值，避免模型变得不可见 // up by xiu
+            // up by xiu: 验证 scale 值并支持统一缩放因子，避免模型不可见或缩放异常
             const scaleX = scale[0] || 1;
             const scaleY = scale[1] || 1;
             const scaleZ = scale[2] || 1;
             
-            // 🔧 可选：添加统一的缩放因子（如果需要统一缩小所有模型，可以设置这个值） // up by xiu
-            // 例如：SCALE_FACTOR = 0.1 表示所有模型缩小到原来的 10% // up by xiu
-            const SCALE_FACTOR = 1.0; // 默认不缩放，设置为 0.1 表示缩小到 10%，0.5 表示缩小到 50% // up by xiu
+            // 可选：添加统一的缩放因子（如果需要统一缩小所有模型，可以设置这个值）
+            // 例如：SCALE_FACTOR = 0.1 表示所有模型缩小到原来的 10%
+            const SCALE_FACTOR = 1.0; // 默认不缩放
             
-            const finalScaleX = scaleX * SCALE_FACTOR; // up by xiu
-            const finalScaleY = scaleY * SCALE_FACTOR; // up by xiu
-            const finalScaleZ = scaleZ * SCALE_FACTOR; // up by xiu
+            const finalScaleX = scaleX * SCALE_FACTOR;
+            const finalScaleY = scaleY * SCALE_FACTOR;
+            const finalScaleZ = scaleZ * SCALE_FACTOR;
             
-            // 检查 scale 是否为有效值（不能全为0，也不能过大） // up by xiu
-            if (finalScaleX === 0 && finalScaleY === 0 && finalScaleZ === 0) { // up by xiu
-              console.warn(`⚠️ 模型 "${instance.name}" 的 scale 为 [0,0,0]，使用默认值 [1,1,1]`); // up by xiu
-              const scaleMatrix = Cesium.Matrix4.fromScale(new Cesium.Cartesian3(1, 1, 1)); // up by xiu
-              Cesium.Matrix4.multiply(modelMatrix, scaleMatrix, modelMatrix); // up by xiu
-            } else if (Math.abs(finalScaleX) > 1000 || Math.abs(finalScaleY) > 1000 || Math.abs(finalScaleZ) > 1000) { // up by xiu
-              console.warn(`⚠️ 模型 "${instance.name}" 的 scale 值过大: [${finalScaleX}, ${finalScaleY}, ${finalScaleZ}]，可能影响显示`); // up by xiu
-              const scaleMatrix = Cesium.Matrix4.fromScale( // up by xiu
-                new Cesium.Cartesian3(finalScaleX, finalScaleY, finalScaleZ) // up by xiu
-              ); // up by xiu
-              Cesium.Matrix4.multiply(modelMatrix, scaleMatrix, modelMatrix); // up by xiu
-            } else { // up by xiu
+            // 检查 scale 是否为有效值（不能全为 0，也不能过大）
+            if (finalScaleX === 0 && finalScaleY === 0 && finalScaleZ === 0) {
+              console.warn(`⚠️ 模型 "${instance.name}" 的 scale 为 [0,0,0]，使用默认值 [1,1,1]`);
+              const scaleMatrix = Cesium.Matrix4.fromScale(new Cesium.Cartesian3(1, 1, 1));
+              Cesium.Matrix4.multiply(modelMatrix, scaleMatrix, modelMatrix);
+            } else if (Math.abs(finalScaleX) > 1000 || Math.abs(finalScaleY) > 1000 || Math.abs(finalScaleZ) > 1000) {
+              console.warn(`⚠️ 模型 "${instance.name}" 的 scale 值过大: [${finalScaleX}, ${finalScaleY}, ${finalScaleZ}]，可能影响显示`);
+              const scaleMatrix = Cesium.Matrix4.fromScale(
+                new Cesium.Cartesian3(finalScaleX, finalScaleY, finalScaleZ)
+              );
+              Cesium.Matrix4.multiply(modelMatrix, scaleMatrix, modelMatrix);
+            } else {
               const scaleMatrix = Cesium.Matrix4.fromScale(
                 new Cesium.Cartesian3(finalScaleX, finalScaleY, finalScaleZ)
               );
               Cesium.Matrix4.multiply(modelMatrix, scaleMatrix, modelMatrix);
             }
             
-            console.log(`应用缩放: [${scaleX}, ${scaleY}, ${scaleZ}] -> [${finalScaleX}, ${finalScaleY}, ${finalScaleZ}] (因子: ${SCALE_FACTOR})`); // up by xiu
+            console.log(`应用缩放: [${scaleX}, ${scaleY}, ${scaleZ}] -> [${finalScaleX}, ${finalScaleY}, ${finalScaleZ}] (因子: ${SCALE_FACTOR})`);
           }
           
           // 加载模型
@@ -447,25 +447,25 @@ export const useCesiumViewer = (
             // model.customShader = ...
           }
           
-          // 🔧 修复：从数据库读取 visibility 并设置模型显示状态 // up by xiu
-          if (instance.properties && typeof instance.properties.visibility !== 'undefined') { // up by xiu
-            model.show = Boolean(instance.properties.visibility); // up by xiu
-            console.log(`✅ 设置模型 "${instance.name}" 的可见性:`, model.show, `(从数据库读取: ${instance.properties.visibility})`); // up by xiu
-          } else { // up by xiu
-            // 如果没有设置 visibility，默认显示 // up by xiu
-            model.show = true; // up by xiu
-            console.log(`✅ 模型 "${instance.name}" 使用默认可见性: true`); // up by xiu
-          } // up by xiu
+          // up by xiu: 从数据库读取 visibility 并设置模型显示状态
+          if (instance.properties && typeof instance.properties.visibility !== 'undefined') {
+            model.show = Boolean(instance.properties.visibility);
+            console.log(`✅ 设置模型 "${instance.name}" 的可见性:`, model.show, `(从数据库读取: ${instance.properties.visibility})`);
+          } else {
+            // 如果没有设置 visibility，默认显示
+            model.show = true;
+            console.log(`✅ 模型 "${instance.name}" 使用默认可见性: true`);
+          }
           
-          // 🔧 添加调试日志：记录模型的完整状态 // up by xiu
-          console.log(`📊 模型 "${instance.name}" 加载完成:`, { // up by xiu
-            id: instance.uid, // up by xiu
-            show: model.show, // up by xiu
-            scale: scale, // up by xiu
-            location: location, // up by xiu
-            rotation: rotation, // up by xiu
-            visibility: instance.properties?.visibility // up by xiu
-          }); // up by xiu
+          // up by xiu: 添加调试日志，记录模型的完整状态
+          console.log(`📊 模型 "${instance.name}" 加载完成:`, {
+            id: instance.uid,
+            show: model.show,
+            scale: scale,
+            location: location,
+            rotation: rotation,
+            visibility: instance.properties?.visibility
+          });
           
           // 添加到场景
           viewerRef.current.scene.primitives.add(model);
